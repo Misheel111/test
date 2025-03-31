@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 const time_range = ref<{
-  start_hour: number
-  start_minute: number
-  end_hour: number
-  end_minute: number
+  start_hour?: number
+  start_minute?: number
+  end_hour?: number
+  end_minute?: number
 }>({})  
-function validateTime(field){
-  if (this.time_range[field]<0) this.time_range[field]=0
-  if(
-    (field.includes('hour') && this.time_range[field]>23) ||
-    (field.includes('minute') && this.time_range[field]>59)
-  ) {
-    this.time_range[field] = field.includes('hour') ? 23 : 59
+function validateTime(field: keyof typeof time_range.value){
+  if (Object.keys(time_range.value).includes(field)){
+    if ((time_range.value[field] ?? 0) < 0) time_range.value[field] = 0
+    if(
+      (field.includes('hour') && (time_range.value[field] ?? 0) > 23) ||
+      (field.includes('minute') && (time_range.value[field] ?? 0) > 59)
+    ) {
+      time_range.value[field] = field.includes('hour') ? 23 : 59
+    }
   }
 }
 interface HistoryDataI {
