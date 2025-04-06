@@ -1,11 +1,95 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import axios from 'axios'
+const host = 'http://localhost:3000'
+interface HistoryDataI {
+  // index?: number
+  action?: string
+  picture?: string | null
+  createdAt?: string
+}
+const HistoryData = ref<HistoryDataI[]>([])
+
 const time_range = ref<{
   start_hour?: number
   start_minute?: number
   end_hour?: number
   end_minute?: number
 }>({})  
+const picture = ref();
+let ws: WebSocket;
+const primaryURL = 'ws://localhost:3000/ws'
+const secondaryURL = 'ws://localhost:3001/ws'
+function connect(url: string){
+  ws = new WebSocket(url)
+  ws.onopen = () => {
+    console.log('WebSocket connection opened')
+  }
+//..............................................receiving data................................................................
+  ws.onmessage = handleWebSocketMessage
+  // Connection closed or lost
+  ws.onclose = () => {
+    console.log(`Connection to ${url} closed`)
+    if(url === primaryURL){
+      console.log(`Attempting to connect to secondary URL: ${secondaryURL}`)
+      connect(secondaryURL)
+    }
+    else{
+      console.log('Could not connect to either server')
+    }
+  // Handling connection errors
+  }
+  ws.onerror = error => {
+    console.error(`WebSocket error on ${url}:`, error)
+    ws.close()
+  }
+}
+//..............................................Storing Received Data........................................
+const StreamImage = ref<string | null>(null)
+const handleWebSocketMessage = (event: MessageEvent) => {
+  const receivedMessage = JSON.parse(event.data)
+  if (receivedMessage.type === 'History') {
+    interface ReceivedMessageData {
+      // index: number;
+      action: string;
+      picture: string | null;
+      createdAt: string;
+    }
+
+    interface ReceivedMessage {
+      datas: ReceivedMessageData[];
+    }
+
+    const receivedMessageTyped: ReceivedMessage = receivedMessage;
+
+    receivedMessageTyped.datas?.forEach((data: ReceivedMessageData) => {
+      const historyItem: HistoryDataI = {
+      // index: data.index,
+      action: data.action,
+      picture: data.picture,
+      createdAt: data.createdAt,
+      };
+      HistoryData.value.push(historyItem);
+    });
+  }
+  else if (receivedMessage.type === 'Stream') {
+    StreamImage.value = receivedMessage.img
+  }
+}
+//..............................................Sending Data.......................................................
+const sendData = (action: string) => {
+  const data = {
+    action: action,
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data))
+    console.log('Sending data:', action)
+  } else {
+    console.error('WebSocket is not open. Cannot send data.')
+  }
+}
+
+
 function validateTime(field: keyof typeof time_range.value){
   if (Object.keys(time_range.value).includes(field)){
     if ((time_range.value[field] ?? 0) < 0) time_range.value[field] = 0
@@ -17,53 +101,27 @@ function validateTime(field: keyof typeof time_range.value){
     }
   }
 }
-interface HistoryDataI {
-  index: number
-  action: string
-  image: string | null
-  date: string
-}
-const history_datas = ref<HistoryDataI[]>([
-  {
-    index: 1,
-    action: "Uploaded image",
-    image: "https://example.com/image1.jpg",
-    date: "2025-03-31T10:15:00Z"
-  },
-  {
-    index: 2,
-    action: "Deleted image",
-    image: null,
-    date: "2025-03-31T10:30:00Z"
-  },
-  {
-    index: 3,
-    action: "Edited image",
-    image: "https://example.com/image2.jpg",
-    date: "2025-03-31T11:00:00Z"
-  },
-  {
-    index: 4,
-    action: "Restored image",
-    image: "https://example.com/image3.jpg",
-    date: "2025-03-31T11:45:00Z"
-  },
-  {
-    index: 5,
-    action: "Archived history",
-    image: null,
-    date: "2025-03-31T12:00:00Z"
+const test = ref()
+onMounted( async ()=>{
+  connect(primaryURL)
+  try{
+    const response = await axios.get(host+'/')
+    test.value = response.data
   }
-]);
+  catch(error){
+    console.error('Error fetching data:', error);
+  }
+  // sendData('get_history')
+})
 </script>
 <template>
   <div class="home-container">
-    <div class="device-container">
+    <!-- <div class="device-container">
 
-    </div>
+    </div> -->
     <div class="detail-container">
       <div class="left-side">
-        <div class="time-container">
+        <!-- <div class="time-container">
          <input
          v-model="time_range.start_hour"
          type="number"
@@ -87,7 +145,7 @@ const history_datas = ref<HistoryDataI[]>([
           type="number"
           @input="validateTime('end_minute')"
           />
-        </div>
+        </div> -->
         <div class="history-container">
           <table>
             
@@ -100,11 +158,11 @@ const history_datas = ref<HistoryDataI[]>([
               </tr>
             </thead>
             <tbody>
-              <tr v-for="history_data in history_datas" :key="history_data.index">
-                <td>{{ history_data.index }}</td>
-                <td>{{ history_data.action }}</td>
-                <td>{{ history_data.image }}</td>
-                <td>{{ history_data.date }}</td>
+              <tr v-for="(item, index) in HistoryData" :key="index">
+                <td>{{ index + 1 }}</td>
+                <td> {{ item.action }} </td>
+                <td><img v-if="item.picture" :src="item.picture"/></td>
+                <td v-if="item.createdAt">{{ (new Date(item.createdAt)).toLocaleString() }}</td>
               </tr>
             </tbody>
           </table>
@@ -112,7 +170,8 @@ const history_datas = ref<HistoryDataI[]>([
       </div>
       <div class="right-side">
         <div class="camera-container">
-          <img src="https://example.com/image3.jpg" alt="Camera" style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;">
+         <!-- {{ rececivedData }} -->
+        <img v-if="StreamImage" :src="StreamImage" alt="Received Image">
         </div>
         
       </div>
@@ -182,6 +241,8 @@ const history_datas = ref<HistoryDataI[]>([
         flex-grow: 1;
         border-radius: 16px;
         border: 1px solid #888;
+        display: flex;
+        justify-content: center;
       }
               td, th{
                 padding: 8px;
@@ -196,6 +257,12 @@ const history_datas = ref<HistoryDataI[]>([
         aspect-ratio: 4/3;
         border-radius: 16px;
         border: 1px solid #888;
+        img{
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: cover;
+          border-radius: 16px;
+        }
       }
     }
   }
